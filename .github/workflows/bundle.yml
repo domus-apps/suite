@@ -1,0 +1,64 @@
+name: Bundle
+
+# Rebuilds Domus.zip (every released app in one archive) and publishes it
+# as this repo's latest release. The site links to the stable URL
+# .../releases/latest/download/Domus.zip.
+on:
+  repository_dispatch:
+    types: [app-release]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * *" # 03:00 KST
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    # macOS: ditto preserves the .app bundles' symlinks and stapled
+    # notarization tickets exactly as the app releases shipped them.
+    runs-on: macos-26
+    steps:
+      - name: Collect the latest release of every app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p Domus dl
+          : > included.txt
+          for repo in oriel transom pharos coffer atrium jamb; do
+            name="$(tr '[:lower:]' '[:upper:]' <<< "${repo:0:1}")${repo:1}"
+            if gh release download -R "domus-apps/$repo" --pattern "$name.zip" --dir dl 2>/dev/null; then
+              ditto -x -k "dl/$name.zip" Domus/
+              tag=$(gh release view -R "domus-apps/$repo" --json tagName --jq .tagName)
+              echo "$name $tag" >> included.txt
+            else
+              echo "skip $repo (no release yet)"
+            fi
+          done
+          [ -s included.txt ] || { echo "no apps released yet"; exit 1; }
+          cat included.txt
+
+      - name: Assemble Domus.zip
+        run: |
+          printf 'Domus — small macOS utilities that feel like home.\nDrag the apps into /Applications.\n\nhttps://domus-apps.com\n' > Domus/README.txt
+          ditto -c -k --sequesterRsrc --keepParent Domus Domus.zip
+
+      - name: Publish as the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${{ github.run_number }}"
+          {
+            echo "Every released Domus app in one zip:"
+            echo
+            while read -r name tag; do echo "- $name $tag"; done < included.txt
+          } > notes.md
+          gh release create "$TAG" Domus.zip --latest \
+            --title "Domus bundle" --notes-file notes.md \
+            -R "${{ github.repository }}"
+          # Keep only the three newest bundles
+          gh release list -R "${{ github.repository }}" \
+            --json tagName --jq '.[].tagName' | tail -n +4 \
+            | while read -r t; do
+                gh release delete "$t" --cleanup-tag -y -R "${{ github.repository }}"
+              done
