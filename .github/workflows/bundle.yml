@@ -25,7 +25,7 @@ jobs:
         run: |
           mkdir -p Domus dl
           : > included.txt
-          for repo in oriel transom pharos coffer atrium jamb keystone; do
+          for repo in oriel transom pharos coffer atrium jamb keystone louver; do
             name="$(tr '[:lower:]' '[:upper:]' <<< "${repo:0:1}")${repo:1}"
             if gh release download -R "domus-apps/$repo" --pattern "$name.zip" --dir dl 2>/dev/null; then
               ditto -x -k "dl/$name.zip" Domus/
