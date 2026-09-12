@@ -3,6 +3,12 @@ name: Bundle
 # Rebuilds Domus.zip (every released app in one archive) and publishes it
 # as this repo's latest release. The site links to the stable URL
 # .../releases/latest/download/Domus.zip.
+#
+# Every run also keeps downloads.json honest: fetching an app's zip here
+# counts as a download on that app's release, so the ledger records how
+# many times each app was fetched (the site subtracts it), and a pruned
+# bundle release takes its own download count with it, so that count is
+# banked before the delete (the site shows banked + live).
 on:
   repository_dispatch:
     types: [app-release]
@@ -19,6 +25,8 @@ jobs:
     # notarization tickets exactly as the app releases shipped them.
     runs-on: macos-26
     steps:
+      - uses: actions/checkout@v4
+
       - name: Collect the latest release of every app
         env:
           GH_TOKEN: ${{ github.token }}
@@ -56,9 +64,32 @@ jobs:
           gh release create "$TAG" Domus.zip --latest \
             --title "Domus bundle" --notes-file notes.md \
             -R "${{ github.repository }}"
-          # Keep only the three newest bundles
-          gh release list -R "${{ github.repository }}" \
-            --json tagName --jq '.[].tagName' | tail -n +4 \
-            | while read -r t; do
-                gh release delete "$t" --cleanup-tag -y -R "${{ github.repository }}"
-              done
+          # Keep only the three newest bundles, banking each one's download
+          # count before it goes.
+          PRUNED=0
+          for t in $(gh release list -R "${{ github.repository }}" \
+            --json tagName --jq '.[].tagName' | tail -n +4); do
+            n=$(gh api "repos/${{ github.repository }}/releases/tags/$t" \
+              --jq '[.assets[].download_count] | add // 0')
+            PRUNED=$((PRUNED + n))
+            gh release delete "$t" --cleanup-tag -y -R "${{ github.repository }}"
+          done
+          echo "$PRUNED" > pruned.txt
+
+      - name: Update the download ledger
+        run: |
+          PRUNED=$(cat pruned.txt)
+          # One fetch per included app this run, plus the banked bundle count.
+          jq --argjson pruned "$PRUNED" \
+            --argjson apps "$(awk '{print tolower($1)}' included.txt | jq -R . | jq -s .)" \
+            '.bundleFetches as $f
+             | .bundleFetches = ($f + ($apps | map({(.): (($f[.] // 0) + 1)}) | add))
+             | .retiredBundleDownloads += $pruned' \
+            downloads.json > downloads.next.json
+          mv downloads.next.json downloads.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add downloads.json
+          git commit -q -m "Record this run's fetches in the download ledger"
+          git pull --rebase --quiet
+          git push --quiet
