@@ -1,17 +1,17 @@
 {
   "bundleFetches": {
-    "oriel": 94,
-    "transom": 94,
-    "pharos": 94,
-    "coffer": 94,
-    "atrium": 94,
-    "jamb": 94,
-    "keystone": 89,
-    "louver": 85,
-    "shutter": 81,
-    "sill": 78,
-    "lantern": 60,
-    "scupper": 57
+    "oriel": 95,
+    "transom": 95,
+    "pharos": 95,
+    "coffer": 95,
+    "atrium": 95,
+    "jamb": 95,
+    "keystone": 90,
+    "louver": 86,
+    "shutter": 82,
+    "sill": 79,
+    "lantern": 61,
+    "scupper": 58
   },
-  "retiredBundleDownloads": 16
+  "retiredBundleDownloads": 17
 }
